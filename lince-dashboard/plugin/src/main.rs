@@ -532,6 +532,7 @@ impl ZellijPlugin for State {
             self.name_prompt.as_ref(),
             &self.config.agent_types,
             &self.config.sandbox_colors,
+            &self.config.workdir_colors,
         );
     }
 

@@ -207,6 +207,57 @@ impl SandboxColors {
     }
 }
 
+fn default_workdir_colors_enabled() -> bool {
+    true
+}
+
+fn default_workdir_palette() -> Vec<String> {
+    vec![
+        "blue".to_string(),
+        "magenta".to_string(),
+        "cyan".to_string(),
+        "green".to_string(),
+        "yellow".to_string(),
+        "red".to_string(),
+    ]
+}
+
+/// Color cycling for the dashboard's swimlane headers (per-workdir).
+///
+/// When the agent table groups agents by `project_dir`, each unique workdir
+/// header gets the next color from `palette` (cycled modulo length, in order
+/// of first appearance). Mirrors the configuration shape of `SandboxColors`.
+#[derive(Debug, Clone, Deserialize)]
+pub struct WorkdirColors {
+    #[serde(default = "default_workdir_colors_enabled")]
+    pub enabled: bool,
+    #[serde(default = "default_workdir_palette")]
+    pub palette: Vec<String>,
+}
+
+impl Default for WorkdirColors {
+    fn default() -> Self {
+        Self {
+            enabled: default_workdir_colors_enabled(),
+            palette: default_workdir_palette(),
+        }
+    }
+}
+
+impl WorkdirColors {
+    /// Resolve a color name for the workdir at the given cycle index.
+    /// Returns `None` when disabled or palette empty — callers should fall
+    /// back to a hard-coded legacy color in that case.
+    pub fn for_index(&self, idx: usize) -> Option<&str> {
+        if !self.enabled || self.palette.is_empty() {
+            return None;
+        }
+        self.palette
+            .get(idx % self.palette.len())
+            .map(|s| s.as_str())
+    }
+}
+
 fn default_status_file_dir() -> String {
     "/tmp/lince-dashboard".to_string()
 }
@@ -283,6 +334,11 @@ pub struct DashboardConfig {
     /// in `~/.config/lince-dashboard/config.toml`.
     #[serde(default)]
     pub sandbox_colors: SandboxColors,
+    /// Per-workdir header color cycling in the agent table.
+    /// Configurable via `[dashboard.workdir_colors]` in
+    /// `~/.config/lince-dashboard/config.toml`.
+    #[serde(default)]
+    pub workdir_colors: WorkdirColors,
     /// Custom sandbox levels discovered from the filesystem, keyed by
     /// `<backend>:<base>` (e.g. `"nono:claude"` or `"agent-sandbox:claude"`).
     /// Populated asynchronously by `discover_sandbox_levels_async()` reading
@@ -311,6 +367,7 @@ impl Default for DashboardConfig {
             agent_types: HashMap::new(),
             sandbox_backend: BackendConfig::default(),
             sandbox_colors: SandboxColors::default(),
+            workdir_colors: WorkdirColors::default(),
             discovered_sandbox_levels: HashMap::new(),
         }
     }

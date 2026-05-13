@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use crate::config::{AgentTypeConfig, SandboxColors};
+use crate::config::{AgentTypeConfig, SandboxColors, WorkdirColors};
 use crate::types::{
     AgentInfo, AgentStatus, NamePromptState, WizardState, WizardStep,
 };
@@ -16,6 +16,23 @@ fn color_name_to_ansi(name: &str) -> &'static str {
         "cyan" => "\x1b[36m",
         "white" => "\x1b[37m",
         _ => "\x1b[37m",  // default to white
+    }
+}
+
+/// Same palette as `color_name_to_ansi` but with the `bold` attribute set.
+/// Used by the per-workdir swimlane headers, whose legacy look was bold blue
+/// (see `BLUE_BOLD`); unknown names fall back to that same legacy color so
+/// behavior is unchanged when the user's palette contains a typo.
+fn bold_color_name_to_ansi(name: &str) -> &'static str {
+    match name {
+        "red" => "\x1b[1;31m",
+        "green" => "\x1b[1;32m",
+        "yellow" => "\x1b[1;33m",
+        "blue" => "\x1b[1;34m",
+        "magenta" => "\x1b[1;35m",
+        "cyan" => "\x1b[1;36m",
+        "white" => "\x1b[1;37m",
+        _ => "\x1b[1;34m",  // legacy fallback: bold blue (matches BLUE_BOLD)
     }
 }
 
@@ -232,6 +249,7 @@ pub fn render_dashboard(
     name_prompt: Option<&NamePromptState>,
     agent_types: &HashMap<String, AgentTypeConfig>,
     sandbox_colors: &SandboxColors,
+    workdir_colors: &WorkdirColors,
 ) {
     if rows == 0 || cols == 0 {
         return;
@@ -282,7 +300,7 @@ pub fn render_dashboard(
     if agents.is_empty() {
         render_empty_state(table_rows, cols);
     } else {
-        render_agent_table(agents, selected, focused, table_rows, cols, agent_types, sandbox_colors);
+        render_agent_table(agents, selected, focused, table_rows, cols, agent_types, sandbox_colors, workdir_colors);
     }
 
     if let Some(detail_id) = detail {
@@ -343,6 +361,7 @@ fn render_agent_table(
     cols: usize,
     agent_types: &HashMap<String, AgentTypeConfig>,
     sandbox_colors: &SandboxColors,
+    workdir_colors: &WorkdirColors,
 ) {
     let col_idx: usize = 3;
     let col_type: usize = 5;  // 3 chars label + "!" marker + space
@@ -385,6 +404,19 @@ fn render_agent_table(
         header_dirs.push(String::new());
     }
 
+    // Assign each unique workdir a stable cycle index (order of first
+    // appearance), so the swimlane header color is independent of scroll
+    // position and survives a `Q` + restart (which preserves agent order
+    // via `restore_agents` → `sort_agents_by_dir`).
+    let mut dir_color_idx: HashMap<&str, usize> = HashMap::new();
+    for (i, slot) in virtual_rows.iter().enumerate() {
+        if slot.is_none() {
+            let d = header_dirs[i].as_str();
+            let next_idx = dir_color_idx.len();
+            dir_color_idx.entry(d).or_insert(next_idx);
+        }
+    }
+
     // Find the virtual row index of the selected agent
     let selected_vrow = virtual_rows.iter().position(|v| *v == Some(selected)).unwrap_or(0);
 
@@ -413,13 +445,20 @@ fn render_agent_table(
 
         match virtual_rows[vrow] {
             None => {
-                // Swimlane header row
+                // Swimlane header row — color cycles per workdir, in the
+                // order each dir first appears. Falls back to the legacy
+                // BLUE_BOLD when workdir_colors is disabled or empty.
                 let dir = &header_dirs[vrow];
+                let idx = dir_color_idx.get(dir.as_str()).copied().unwrap_or(0);
+                let header_color = workdir_colors
+                    .for_index(idx)
+                    .map(bold_color_name_to_ansi)
+                    .unwrap_or(BLUE_BOLD);
                 let short = collapse_tilde(dir);
                 let fill_len = cols.saturating_sub(short.len() + 5);
                 println!(
                     " {}\u{250c} {} {}{}",
-                    BLUE_BOLD, short, repeat_char('\u{2500}', fill_len), RESET,
+                    header_color, short, repeat_char('\u{2500}', fill_len), RESET,
                 );
                 rendered_rows += 1;
             }

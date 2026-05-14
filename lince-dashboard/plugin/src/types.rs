@@ -217,13 +217,19 @@ impl WizardState {
     /// Build the ordered list of active wizard steps, applying skip rules.
     /// Used by the renderer for the step counter and by key handlers for
     /// computing prev/next steps without nested `if` arithmetic.
+    ///
+    /// Order: SandboxBackend first, then AgentType. Surfacing the
+    /// sandboxed-vs-unsandboxed choice as the very first wizard question
+    /// makes the `none` backend discoverable (otherwise it sits behind a
+    /// default-tab on `nono`/`agent-sandbox` at step 2) and matches the
+    /// mental model "do I want isolation? then which agent?".
     pub fn active_steps(&self) -> Vec<WizardStep> {
         let mut steps = Vec::with_capacity(7);
-        if self.has_agent_types() {
-            steps.push(WizardStep::AgentType);
-        }
         if self.has_sandbox_backends() {
             steps.push(WizardStep::SandboxBackend);
+        }
+        if self.has_agent_types() {
+            steps.push(WizardStep::AgentType);
         }
         if self.has_sandbox_levels() && !self.is_unsandboxed_choice() {
             steps.push(WizardStep::SandboxLevel);

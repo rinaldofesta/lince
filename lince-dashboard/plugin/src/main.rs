@@ -930,10 +930,19 @@ impl State {
                 BareKey::Enter | BareKey::Tab => {
                     let base = wizard.selected_base_agent().to_string();
                     // Re-resolve sandbox backends for the selected base BEFORE advancing.
+                    // Preserve the backend the user already picked (relevant when
+                    // SandboxBackend was step 1 in the new order); fall back to the
+                    // type-specific default only when the previous choice is no longer
+                    // available for this base.
+                    let preserved_backend = wizard.selected_sandbox_backend();
                     wizard.available_sandbox_backends = self.config
                         .available_backends_for_base(&base, self.detected_backends.as_ref());
-                    wizard.sandbox_backend_index = self.config
-                        .default_backend_index_for_base(&base, &wizard.available_sandbox_backends);
+                    wizard.sandbox_backend_index = preserved_backend
+                        .and_then(|prev| {
+                            wizard.available_sandbox_backends.iter().position(|b| *b == prev)
+                        })
+                        .unwrap_or_else(|| self.config
+                            .default_backend_index_for_base(&base, &wizard.available_sandbox_backends));
                     // Re-resolve sandbox levels (backend-aware: includes custom levels
                     // discovered for the freshly-resolved backend index).
                     let backend_for_levels = wizard.available_sandbox_backends
